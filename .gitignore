@@ -1,0 +1,21 @@
+# Virtual environment
+.abb/
+
+# Environment / secrets
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Build artifacts
+*.egg-info/
+build/
+dist/
+
+# Agent Black Box runtime data
+data/*.db
+data/*.sqlite
+data/*.sqlite3
+data/*.jsonl
