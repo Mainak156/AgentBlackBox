@@ -11,8 +11,10 @@ Run from the project root:
 from __future__ import annotations
 
 import json
+from contextlib import contextmanager
+from importlib.resources import as_file, files
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterator
 
 import streamlit as st
 
@@ -21,6 +23,29 @@ from agent_black_box.storage.sqlite import SQLiteStorage
 
 DEFAULT_DATABASE = Path("data/traces.db")
 APPLICATION_VERSION = "0.1.0"
+
+LOGO_RESOURCE = files("agent_black_box").joinpath(
+    "assets",
+    "abb-logo-symbol.svg",
+)
+
+
+@contextmanager
+def get_logo_path() -> Iterator[Path | None]:
+    """
+    Resolve the packaged Agent Black Box logo to a filesystem path.
+
+    The logo is shipped as package data, so the dashboard does not depend
+    on the user's local project directory structure.
+
+    Yields:
+        A temporary filesystem path to the logo, or None if unavailable.
+    """
+    try:
+        with as_file(LOGO_RESOURCE) as logo_path:
+            yield logo_path
+    except (FileNotFoundError, ModuleNotFoundError, OSError):
+        yield None
 
 
 def load_events(database_path: Path) -> list[Any]:
@@ -269,17 +294,46 @@ def event_to_json(event: Any) -> str:
     )
 
 
-def render_header() -> None:
-    """Render the dashboard header."""
-    st.title("Agent Black Box")
-    st.caption(
-        "AI-agent observability and trace replay"
-        f" · v{APPLICATION_VERSION}"
+def render_header(logo_path: Path | None) -> None:
+    """Render the branded Agent Black Box dashboard header."""
+    logo_column, title_column = st.columns(
+        [0.12, 0.88],
+        vertical_alignment="center",
     )
 
+    with logo_column:
+        if logo_path is not None:
+            st.image(
+                str(logo_path),
+                width=72,
+            )
 
-def render_sidebar() -> Path:
+    with title_column:
+        st.title("Agent Black Box")
+        st.caption(
+            "AI-agent observability and trace replay"
+            f" · v{APPLICATION_VERSION}"
+        )
+
+
+def render_sidebar(logo_path: Path | None) -> Path:
     """Render sidebar controls."""
+    if logo_path is not None:
+        st.sidebar.image(
+            str(logo_path),
+            width=56,
+        )
+
+    st.sidebar.markdown(
+        "### Agent Black Box"
+    )
+
+    st.sidebar.caption(
+        "AI-agent observability and trace replay"
+    )
+
+    st.sidebar.divider()
+
     st.sidebar.header("Trace Source")
 
     database_text = st.sidebar.text_input(
@@ -612,90 +666,99 @@ def render_empty_state(database_path: Path) -> None:
 
 def main() -> None:
     """Run the Streamlit application."""
-    st.set_page_config(
-        page_title="Agent Black Box",
-        page_icon="🔍",
-        layout="wide",
-        initial_sidebar_state="expanded",
-    )
-
-    render_header()
-
-    database_path = render_sidebar()
-
-    try:
-        events = load_events(database_path)
-    except Exception as exc:
-        st.error(
-            f"Unable to load trace database: {exc}"
-        )
-        return
-
-    if not events:
-        render_empty_state(database_path)
-        return
-
-    run_ids = get_run_ids(events)
-
-    if not run_ids:
-        render_empty_state(database_path)
-        return
-
-    st.sidebar.success(
-        f"{len(run_ids)} traced run"
-        f"{'s' if len(run_ids) != 1 else ''} found"
-    )
-
-    selected_run_id = st.sidebar.selectbox(
-        "Select Run",
-        options=run_ids,
-        format_func=lambda run_id: (
-            f"{get_run_name(get_run_events(events, run_id))} "
-            f"({run_id})"
-        ),
-    )
-
-    selected_events = get_run_events(
-        events,
-        selected_run_id,
-    )
-
-    run_name = get_run_name(selected_events)
-
-    st.header(run_name)
-
-    st.caption(
-        f"Run ID: `{selected_run_id}`"
-    )
-
-    render_run_summary(selected_events)
-    render_run_metadata(selected_events)
-    render_root_cause(selected_events)
-
-    st.divider()
-
-    timeline_column, details_column = st.columns(
-        [0.9, 1.5],
-        gap="large",
-    )
-
-    with timeline_column:
-        selected_index = render_timeline(
-            selected_events
+    with get_logo_path() as logo_path:
+        st.set_page_config(
+            page_title="Agent Black Box",
+            page_icon=(
+                str(logo_path)
+                if logo_path is not None
+                else "🔍"
+            ),
+            layout="wide",
+            initial_sidebar_state="expanded",
         )
 
-    with details_column:
-        if selected_index is None:
-            root_cause = get_root_cause_event(selected_events)
+        render_header(logo_path)
 
-            if root_cause is not None:
-                render_event_details(root_cause)
-            elif selected_events:
-                render_event_details(selected_events[-1])
-        else:
-            render_event_details(
-                selected_events[selected_index]
+        database_path = render_sidebar(logo_path)
+
+        try:
+            events = load_events(database_path)
+        except Exception as exc:
+            st.error(
+                f"Unable to load trace database: {exc}"
             )
+            return
+
+        if not events:
+            render_empty_state(database_path)
+            return
+
+        run_ids = get_run_ids(events)
+
+        if not run_ids:
+            render_empty_state(database_path)
+            return
+
+        st.sidebar.success(
+            f"{len(run_ids)} traced run"
+            f"{'s' if len(run_ids) != 1 else ''} found"
+        )
+
+        selected_run_id = st.sidebar.selectbox(
+            "Select Run",
+            options=run_ids,
+            format_func=lambda run_id: (
+                f"{get_run_name(get_run_events(events, run_id))} "
+                f"({run_id})"
+            ),
+        )
+
+        selected_events = get_run_events(
+            events,
+            selected_run_id,
+        )
+
+        run_name = get_run_name(selected_events)
+
+        st.header(run_name)
+
+        st.caption(
+            f"Run ID: `{selected_run_id}`"
+        )
+
+        render_run_summary(selected_events)
+        render_run_metadata(selected_events)
+        render_root_cause(selected_events)
+
+        st.divider()
+
+        timeline_column, details_column = st.columns(
+            [0.9, 1.5],
+            gap="large",
+        )
+
+        with timeline_column:
+            selected_index = render_timeline(
+                selected_events
+            )
+
+        with details_column:
+            if selected_index is None:
+                root_cause = get_root_cause_event(
+                    selected_events
+                )
+
+                if root_cause is not None:
+                    render_event_details(root_cause)
+                elif selected_events:
+                    render_event_details(
+                        selected_events[-1]
+                    )
+            else:
+                render_event_details(
+                    selected_events[selected_index]
+                )
 
 
 if __name__ == "__main__":

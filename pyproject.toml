@@ -36,6 +36,11 @@ packages = [
     "dashboard",
 ]
 
+[tool.setuptools.package-data]
+agent_black_box = [
+    "assets/*.svg",
+]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = ["test_*.py"]
